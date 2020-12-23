@@ -16,7 +16,7 @@ type Bot struct {
 	sync.Mutex
 	tbBot         *tb.Bot
 	store         *heaterstore.Store
-	heaterChanMap map[string][]chan<- string
+	heaterChanMap map[string][]chan<- heaterstore.Record
 }
 
 func New(token string, store *heaterstore.Store) *Bot {
@@ -31,7 +31,7 @@ func New(token string, store *heaterstore.Store) *Bot {
 	bot := Bot{
 		tbBot:         b,
 		store:         store,
-		heaterChanMap: make(map[string][]chan<- string),
+		heaterChanMap: make(map[string][]chan<- heaterstore.Record),
 	}
 
 	b.Handle("/hello", func(m *tb.Message) {
@@ -59,7 +59,7 @@ func New(token string, store *heaterstore.Store) *Bot {
 				return
 			}
 			log.Debugf("found pending value \"%s\" for user %s", pendingValue, m.Sender.Username)
-			err = bot.store.Set(m.Sender.Username, m.Text, pendingValue)
+			record, err := bot.store.Set(m.Sender.Username, m.Text, pendingValue)
 			if err != nil {
 				log.Errorf("error setting pending value: %s", err.Error())
 				return
@@ -68,7 +68,7 @@ func New(token string, store *heaterstore.Store) *Bot {
 			if err != nil {
 				log.Errorf("failed to remove pending value for %s: %s", m.Sender.Username, err.Error())
 			}
-			count := bot.Set(m.Sender.Username, m.Text, pendingValue)
+			count := bot.Publish(m.Sender.Username, m.Text, record)
 			b.Send(m.Sender, fmt.Sprintf("I set %d connections for %s to %s", count, m.Text, pendingValue))
 		}
 	})
@@ -108,21 +108,21 @@ func (b *Bot) Start() {
 	b.tbBot.Start()
 }
 
-func (b *Bot) Subscribe(username, heater string) <-chan string {
+func (b *Bot) Subscribe(username, heater string) <-chan heaterstore.Record {
 	b.Lock()
 	defer b.Unlock()
 	id := fmt.Sprintf("%s/%s", username, heater)
 	chans, ok := b.heaterChanMap[id]
 	if !ok {
 		log.Debugf("created new channel slice for %s", id)
-		chans = make([]chan<- string, 0)
+		chans = make([]chan<- heaterstore.Record, 0)
 	}
-	newChan := make(chan string, 1)
+	newChan := make(chan heaterstore.Record, 1)
 	b.heaterChanMap[id] = append(chans, newChan)
 	return newChan
 }
 
-func (b *Bot) Set(username, heater, value string) int {
+func (b *Bot) Publish(username, heater string, r heaterstore.Record) int {
 	b.Lock()
 	defer b.Unlock()
 	var count int
@@ -130,13 +130,13 @@ func (b *Bot) Set(username, heater, value string) int {
 	heaterChans, ok := b.heaterChanMap[id]
 	if ok {
 		for _, heaterChan := range heaterChans {
-			heaterChan <- value
+			heaterChan <- r
 		}
 		count = len(heaterChans)
 	}
-	b.heaterChanMap[id] = make([]chan<- string, 0)
+	b.heaterChanMap[id] = make([]chan<- heaterstore.Record, 0)
 
-	log.Infof("Set %d connections for %s to %s", count, id, value)
+	log.Infof("Set %d connections for %s to %s", count, id, r.Value)
 	return count
 }
 
@@ -164,11 +164,12 @@ func (b *Bot) OnOffHandler(value string) func(*tb.Message) {
 			}
 			// If the user has just one heater, assume that's the one to act on
 			if len(ids) == 1 {
-				err = b.store.Set(m.Sender.Username, ids[0], value)
+				record, err := b.store.Set(m.Sender.Username, ids[0], value)
 				if err != nil {
 					log.Errorf("error setting pending value: %s", err.Error())
 					return
 				}
+				b.Publish(m.Sender.Username, ids[0], record)
 				b.tbBot.Send(m.Sender, fmt.Sprintf("I set %s to %s", ids[0], value))
 				return
 			}

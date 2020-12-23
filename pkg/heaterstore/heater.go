@@ -1,39 +1,57 @@
 package heaterstore
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const PendingValueFilename = ".pendingvalue"
 
 type Store struct {
+	sync.Mutex
 	Dir string
 }
 
-func (h *Store) Get(username, id string) (string, error) {
-	data, err := ioutil.ReadFile(filepath.Join(h.Dir, username, id))
-	if err != nil {
-		return "", err
-	}
-	return strings.Trim(string(data), "\n"), nil
+type Record struct {
+	Value   string
+	Version int
 }
 
-func (h *Store) Set(username, id, value string) error {
-	current, err := h.Get(username, id)
+func (h *Store) Get(username, id string) (Record, error) {
+	r := Record{}
+	data, err := ioutil.ReadFile(filepath.Join(h.Dir, username, id))
 	if err != nil {
-		return err
+		return r, err
+	}
+	err = json.Unmarshal(data, &r)
+	if err != nil {
+		return r, err
+	}
+	return r, nil
+}
+
+func (h *Store) Set(username, id, value string) (Record, error) {
+	h.Lock()
+	defer h.Unlock()
+	r, err := h.Get(username, id)
+	if err != nil {
+		return r, err
+	}
+	r.Version++
+	data, err := json.Marshal(r)
+	if err != nil {
+		return r, err
 	}
 
-	if current != value {
-		err = ioutil.WriteFile(filepath.Join(h.Dir, username, id), []byte(value), 0644)
-		if err != nil {
-			return err
-		}
+	err = ioutil.WriteFile(filepath.Join(h.Dir, username, id), data, 0644)
+	if err != nil {
+		return r, err
 	}
-	return nil
+	return r, nil
 }
 
 func (h *Store) IDs(username string) ([]string, error) {
