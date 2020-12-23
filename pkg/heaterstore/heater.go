@@ -1,7 +1,6 @@
 package heaterstore
 
 import (
-	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -19,13 +18,7 @@ func (h *Store) Get(username, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	value := strings.Trim(string(data), "\n")
-	switch value {
-	case "on", "off":
-		return value, nil
-	default:
-		return "", errors.New("unknown value: " + value)
-	}
+	return strings.Trim(string(data), "\n"), nil
 }
 
 func (h *Store) Set(username, id, value string) error {
@@ -72,4 +65,12 @@ func (h *Store) GetPendingValue(username string) (string, error) {
 		return "", err
 	}
 	return strings.Trim(string(data), "\n"), nil
+}
+
+func (h *Store) DelPendingValue(username string) error {
+	err := os.Remove(filepath.Join(h.Dir, username, PendingValueFilename))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
