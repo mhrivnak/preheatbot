@@ -41,6 +41,7 @@ func (h *Store) Set(username, id, value string) (Record, error) {
 	if err != nil {
 		return r, err
 	}
+	r.Value = value
 	r.Version++
 	data, err := json.Marshal(r)
 	if err != nil {
