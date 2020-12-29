@@ -36,7 +36,7 @@ func New(subscriber Subscriber, store *heaterstore.Store, listenAddr string) *ht
 		subscriber: subscriber,
 	}
 
-	r.HandleFunc("/api/users/{username}/heaters/{heater}", api.HeaterHandler).Methods("GET")
+	r.HandleFunc("/v1/users/{username}/heaters/{heater}", api.HeaterHandler).Methods("GET")
 
 	return &api.server
 }
