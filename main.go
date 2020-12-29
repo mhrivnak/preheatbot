@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 
 	log "github.com/sirupsen/logrus"
@@ -24,10 +25,32 @@ func main() {
 	if debug != "" {
 		log.SetLevel(log.DebugLevel)
 	}
+	listenAddr := os.Getenv("LISTENADDR")
+	if listenAddr == "" {
+		listenAddr = ":8080"
+		log.Infof("using default listen address %s", listenAddr)
+	}
 
 	store := heaterstore.Store{Dir: datadir}
 	b := bot.New(token, &store)
-	server := api.New(b, &store)
-	go server.ListenAndServe()
-	b.Start()
+	server := api.New(b, &store, listenAddr)
+	exitChan := make(chan error)
+
+	// start bot
+	go func() {
+		b.Start()
+		exitChan <- errors.New("bot routine exited unexpectedly")
+	}()
+
+	// start API
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil {
+			exitChan <- err
+		}
+		exitChan <- errors.New("http listener returned unexpectedly")
+	}()
+
+	err := <-exitChan
+	log.WithError(err).Fatal("Exiting")
 }

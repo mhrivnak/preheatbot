@@ -17,8 +17,12 @@ type Store struct {
 }
 
 type Record struct {
-	Value   string
-	Version int
+	Value   string `json:"value"`
+	Version int    `json:"version"`
+}
+
+func (h *Store) IsNotExist(err error) bool {
+	return os.IsNotExist(err)
 }
 
 func (h *Store) Get(username, id string) (Record, error) {
